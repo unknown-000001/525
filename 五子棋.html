@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>五子棋 - 可选择人机/人人</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: "Microsoft YaHei", sans-serif;
+        }
+
+        body {
+            background-color: #f5f5f5;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .title {
+            font-size: 28px;
+            font-weight: bold;
+            color: #333;
+            margin-bottom: 15px;
+        }
+
+        /* 模式选择 */
+        .mode-group {
+            margin-bottom: 15px;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+        .mode-btn {
+            padding: 6px 16px;
+            font-size: 15px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            background: #eee;
+        }
+        .mode-btn.active {
+            background: #0077b6;
+            color: white;
+        }
+
+        .status {
+            font-size: 18px;
+            margin-bottom: 15px;
+            color: #d62828;
+            font-weight: bold;
+        }
+
+        .restart {
+            padding: 8px 20px;
+            font-size: 16px;
+            background-color: #0077b6;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+
+        .restart:hover {
+            background-color: #023e8a;
+        }
+
+        /* 棋盘样式 */
+        .board {
+            width: 560px;
+            height: 560px;
+            background-color: #cd853f;
+            border: 10px solid #8b4513;
+            display: grid;
+            grid-template-columns: repeat(15, 1fr);
+            grid-template-rows: repeat(15, 1fr);
+            position: relative;
+        }
+
+        /* 棋盘网格线 */
+        .grid {
+            border-right: 1px solid #333;
+            border-bottom: 1px solid #333;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .grid:nth-child(15n) {
+            border-right: none;
+        }
+
+        .grid:nth-last-child(-n+15) {
+            border-bottom: none;
+        }
+
+        /* 棋子样式 */
+        .chess {
+            width: 80%;
+            height: 80%;
+            border-radius: 50%;
+            position: absolute;
+            top: 10%;
+            left: 10%;
+            box-shadow: 2px 2px 5px rgba(0,0,0,0.3);
+        }
+
+        .black {
+            background-color: #000;
+        }
+
+        .white {
+            background-color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div class="title">五子棋</div>
+
+    <!-- 模式选择 -->
+    <div class="mode-group">
+        <button class="mode-btn active" id="aiMode">人机对战（我执黑）</button>
+        <button class="mode-btn" id="pvpMode">人人对战</button>
+    </div>
+
+    <div class="status" id="status">轮到你下棋（黑子）</div>
+    <button class="restart" id="restart">重新开始</button>
+    <div class="board" id="board"></div>
+
+    <script>
+        // 基础配置
+        const SIZE = 15;
+        let board = Array(SIZE).fill().map(() => Array(SIZE).fill(0));
+        let isPlayerTurn = true;    // 黑棋回合
+        let gameOver = false;
+        let gameMode = 'ai';       // ai / pvp
+
+        const boardDom = document.getElementById('board');
+        const statusDom = document.getElementById('status');
+        const restartBtn = document.getElementById('restart');
+        const aiModeBtn = document.getElementById('aiMode');
+        const pvpModeBtn = document.getElementById('pvpMode');
+
+        // 初始化棋盘
+        function initBoard() {
+            boardDom.innerHTML = '';
+            for (let i = 0; i < SIZE; i++) {
+                for (let j = 0; j < SIZE; j++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'grid';
+                    cell.dataset.row = i;
+                    cell.dataset.col = j;
+                    cell.addEventListener('click', playerMove);
+                    boardDom.appendChild(cell);
+                }
+            }
+        }
+
+        // 切换模式
+        aiModeBtn.addEventListener('click', () => {
+            gameMode = 'ai';
+            aiModeBtn.classList.add('active');
+            pvpModeBtn.classList.remove('active');
+            restartGame();
+        });
+        pvpModeBtn.addEventListener('click', () => {
+            gameMode = 'pvp';
+            pvpModeBtn.classList.add('active');
+            aiModeBtn.classList.remove('active');
+            restartGame();
+        });
+
+        // 玩家落子（通用）
+        function playerMove(e) {
+            if (gameOver) return;
+
+            const row = parseInt(e.target.dataset.row);
+            const col = parseInt(e.target.dataset.col);
+            if (board[row][col] !== 0) return;
+
+            // 当前玩家：黑1 白2
+            const currentPlayer = isPlayerTurn ? 1 : 2;
+            placeChess(row, col, currentPlayer);
+            board[row][col] = currentPlayer;
+
+            // 判断胜利
+            if (checkWin(row, col, currentPlayer)) {
+                statusDom.textContent = currentPlayer === 1 ? '黑棋获胜！' : '白棋获胜！';
+                gameOver = true;
+                return;
+            }
+
+            // 切换回合
+            isPlayerTurn = !isPlayerTurn;
+
+            // 模式判断
+            if (gameMode === 'ai') {
+                // 人机：黑棋玩家，白棋AI
+                statusDom.textContent = isPlayerTurn ? '轮到你下棋（黑子）' : 'AI思考中...';
+                if (!isPlayerTurn) setTimeout(aiMove, 500);
+            } else {
+                // 人人
+                statusDom.textContent = isPlayerTurn ? '轮到黑棋' : '轮到白棋';
+            }
+        }
+
+        // AI落子
+        function aiMove() {
+            if (gameOver || isPlayerTurn) return;
+
+            let bestRow = -1, bestCol = -1, maxScore = 0;
+            for (let i = 0; i < SIZE; i++) {
+                for (let j = 0; j < SIZE; j++) {
+                    if (board[i][j] === 0) {
+                        const scoreAi = evaluate(i, j, 2);
+                        const scorePlayer = evaluate(i, j, 1);
+                        const score = Math.max(scoreAi, scorePlayer);
+                        if (score > maxScore) {
+                            maxScore = score;
+                            bestRow = i;
+                            bestCol = j;
+                        }
+                    }
+                }
+            }
+
+            placeChess(bestRow, bestCol, 2);
+            board[bestRow][bestCol] = 2;
+
+            if (checkWin(bestRow, bestCol, 2)) {
+                statusDom.textContent = 'AI获胜！';
+                gameOver = true;
+                return;
+            }
+
+            isPlayerTurn = true;
+            statusDom.textContent = '轮到你下棋（黑子）';
+        }
+
+        // 评分函数
+        function evaluate(row, col, player) {
+            const dirs = [[1,0],[0,1],[1,1],[1,-1]];
+            let score = 0;
+            for (let [dx, dy] of dirs) {
+                let count = 1, empty = 0;
+                let x = row + dx, y = col + dy;
+                while (x >= 0 && x < SIZE && y >= 0 && y < SIZE && board[x][y] === player) {
+                    count++; x += dx; y += dy;
+                }
+                if (x >= 0 && x < SIZE && y >= 0 && y < SIZE && board[x][y] === 0) empty++;
+
+                x = row - dx; y = col - dy;
+                while (x >= 0 && x < SIZE && y >= 0 && y < SIZE && board[x][y] === player) {
+                    count++; x -= dx; y -= dy;
+                }
+                if (x >= 0 && x < SIZE && y >= 0 && y < SIZE && board[x][y] === 0) empty++;
+
+                if (count >=5) score +=10000;
+                else if (count===4 && empty===2) score +=5000;
+                else if (count===4 && empty===1) score +=1000;
+                else if (count===3 && empty===2) score +=500;
+                else if (count===3 && empty===1) score +=100;
+                else if (count===2 && empty===2) score +=50;
+                else score += count;
+            }
+            return score;
+        }
+
+        // 放置棋子
+        function placeChess(row, col, player) {
+            const cells = document.querySelectorAll('.grid');
+            const index = row * SIZE + col;
+            const chess = document.createElement('div');
+            chess.className = `chess ${player === 1 ? 'black' : 'white'}`;
+            cells[index].appendChild(chess);
+        }
+
+        // 判断胜利
+        function checkWin(row, col, player) {
+            const dirs = [[1,0],[0,1],[1,1],[1,-1]];
+            for (let [dx, dy] of dirs) {
+                let count = 1;
+                for (let i=1; i<5; i++) {
+                    const x = row + dx*i;
+                    const y = col + dy*i;
+                    if (x>=0&&x<SIZE&&y>=0&&y<SIZE&&board[x][y]===player) count++;
+                    else break;
+                }
+                for (let i=1; i<5; i++) {
+                    const x = row - dx*i;
+                    const y = col - dy*i;
+                    if (x>=0&&x<SIZE&&y>=0&&y<SIZE&&board[x][y]===player) count++;
+                    else break;
+                }
+                if (count >=5) return true;
+            }
+            return false;
+        }
+
+        // 重新开始
+        function restartGame() {
+            board = Array(SIZE).fill().map(() => Array(SIZE).fill(0));
+            isPlayerTurn = true;
+            gameOver = false;
+            if (gameMode === 'ai') {
+                statusDom.textContent = '轮到你下棋（黑子）';
+            } else {
+                statusDom.textContent = '轮到黑棋';
+            }
+            initBoard();
+        }
+        restartBtn.addEventListener('click', restartGame);
+
+        // 启动
+        initBoard();
+    </script>
+</body>
+</html>
