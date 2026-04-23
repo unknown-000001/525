@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>贪吃蛇（完美版）</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: "Microsoft YaHei", sans-serif;
+        }
+
+        body {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #1e3c72, #2a5298);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 10px;
+        }
+
+        .game-container {
+            background: #fff;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+        }
+
+        .game-title {
+            font-size: 28px;
+            color: #2a5298;
+            margin-bottom: 15px;
+        }
+
+        .score-panel {
+            display: flex;
+            justify-content: space-between;
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .current {
+            color: #e74c3c;
+        }
+
+        .best {
+            color: #f39c12;
+        }
+
+        .control-panel {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        select, button {
+            padding: 8px 10px;
+            border: 2px solid #2a5298;
+            border-radius: 8px;
+            font-size: 15px;
+            outline: none;
+            cursor: pointer;
+            background: #fff;
+        }
+
+        button {
+            background: #2a5298;
+            color: white;
+            transition: 0.3s;
+        }
+        button:hover {
+            background: #1e3c72;
+        }
+        button:disabled {
+            background: #ccc;
+            border-color: #ccc;
+            cursor: not-allowed;
+        }
+
+        #gameCanvas {
+            border: 3px solid #333;
+            border-radius: 8px;
+            background: #f8f9fa;
+            display: block;
+            margin: 0 auto;
+            width: 100%;
+            max-width: 400px;
+            height: auto;
+        }
+
+        .mobile-tip {
+            margin-top: 10px;
+            color: #666;
+            fontSize: 14px;
+        }
+
+        .pause-overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 20px 30px;
+            border-radius: 10px;
+            font-size: 24px;
+            display: none;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+<div class="game-container">
+    <h1 class="game-title">🐍 贪吃蛇</h1>
+    
+    <div class="score-panel">
+        <div class="current">当前: <span id="score">0</span></div>
+        <div class="best">最高分: <span id="bestScore">0</span></div>
+    </div>
+
+    <div class="control-panel">
+        <button id="startBtn">开始游戏</button>
+        <button id="pauseBtn" disabled>暂停</button>
+        <select id="speedSelect">
+            <option value="220">慢速</option>
+            <option value="140" selected>中速</option>
+            <option value="80">快速</option>
+        </select>
+        <select id="mapSelect">
+            <option value="0">经典地图</option>
+            <option value="1">围墙地图</option>
+            <option value="2">十字地图</option>
+            <option value="3">迷宫地图</option>
+        </select>
+    </div>
+
+    <div id="pauseOverlay" class="pause-overlay">已暂停</div>
+    <canvas id="gameCanvas"></canvas>
+    <p class="mobile-tip">电脑：方向键控制 | 手机：滑动屏幕控制</p>
+</div>
+
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const scoreElement = document.getElementById('score');
+const bestScoreElement = document.getElementById('bestScore');
+const speedSelect = document.getElementById('speedSelect');
+const mapSelect = document.getElementById('mapSelect');
+const startBtn = document.getElementById('startBtn');
+const pauseBtn = document.getElementById('pauseBtn');
+const pauseOverlay = document.getElementById('pauseOverlay');
+
+const gridSize = 20;
+const tileCount = 20;
+canvas.width = tileCount * gridSize;
+canvas.height = tileCount * gridSize;
+
+let snake = [{x: 4, y: 4}];
+let velocity = {x: 1, y: 0};
+let food = {x: 15, y: 15};
+let score = 0;
+let bestScore = 0;
+let gameSpeed = 140;
+let gameLoop;
+let currentMap = 0;
+let walls = [];
+
+let isRunning = false;
+let isPaused = false;
+
+// ============== 本地存储最高分 ==============
+function loadBestScore() {
+    const saved = localStorage.getItem('snakeBestScore');
+    bestScore = saved ? parseInt(saved) : 0;
+    bestScoreElement.textContent = bestScore;
+}
+
+function saveBestScore() {
+    if (score > bestScore) {
+        bestScore = score;
+        localStorage.setItem('snakeBestScore', bestScore);
+        bestScoreElement.textContent = bestScore;
+    }
+}
+
+// ============== 地图定义 ==============
+const maps = [
+    // 0 经典
+    [],
+    // 1 围墙
+    (()=>{
+        let w = [];
+        for(let i=0;i<tileCount;i++){
+            w.push({x:i,y:0},{x:i,y:tileCount-1},{x:0,y:i},{x:tileCount-1,y:i});
+        }
+        return w;
+    })(),
+    // 2 超大十字地图（安全出生点）
+    (() => {
+        const w = [];
+        const centerX = 10;
+        const centerY = 10;
+        // 横向
+        for (let x = 0; x < tileCount; x++) {
+            if (x < 6 || x > 14) w.push({ x, y: centerY });
+        }
+        // 纵向
+        for (let y = 0; y < tileCount; y++) {
+            if (y < 6 || y > 14) w.push({ x: centerX, y });
+        }
+        return w;
+    })(),
+    // 3 迷宫
+    [
+        {x:5,y:5},{x:6,y:5},{x:7,y:5},{x:5,y:6},{x:5,y:7},
+        {x:14,y:5},{x:13,y:5},{x:12,y:5},{x:14,y:6},{x:14,y:7},
+        {x:5,y:14},{x:6,y:14},{x:7,y:14},{x:5,y:13},{x:5,y:12},
+        {x:14,y:14},{x:13,y:14},{x:12,y:14},{x:14,y:13},{x:14,y:12}
+    ]
+];
+
+// ============== 游戏初始化 ==============
+function initGame() {
+    snake = [{ x: 4, y: 4 }];
+    velocity = {x:1, y:0};
+    score = 0;
+    updateScore();
+    walls = maps[currentMap];
+    spawnFood();
+    drawGame();
+}
+
+function updateScore() {
+    scoreElement.textContent = score;
+}
+
+// ============== 食物生成 ==============
+function spawnFood() {
+    let nf;
+    while (true) {
+        nf = {
+            x: Math.floor(Math.random() * tileCount),
+            y: Math.floor(Math.random() * tileCount)
+        };
+        const inSnake = snake.some(s => s.x === nf.x && s.y === nf.y);
+        const inWall = walls.some(w => w.x === nf.x && w.y === nf.y);
+        if (!inSnake && !inWall) break;
+    }
+    food = nf;
+}
+
+// ============== 游戏主循环 ==============
+function gameUpdate() {
+    if (isPaused) return;
+
+    const head = { x: snake[0].x + velocity.x, y: snake[0].y + velocity.y };
+
+    // 边缘穿梭
+    if (head.x < 0) head.x = tileCount - 1;
+    if (head.x >= tileCount) head.x = 0;
+    if (head.y < 0) head.y = tileCount - 1;
+    if (head.y >= tileCount) head.y = 0;
+
+    snake.unshift(head);
+
+    // 吃食物
+    if (head.x === food.x && head.y === food.y) {
+        score += 10;
+        updateScore();
+        spawnFood();
+    } else {
+        snake.pop();
+    }
+
+    // 碰撞
+    if (checkCollision()) {
+        saveBestScore();
+        clearInterval(gameLoop);
+        isRunning = false;
+        startBtn.disabled = false;
+        pauseBtn.disabled = true;
+        pauseBtn.textContent = '暂停';
+        alert(`游戏结束！\n当前分数：${score}\n历史最高分：${bestScore}`);
+        initGame();
+        return;
+    }
+
+    drawGame();
+}
+
+// ============== 碰撞检测 ==============
+function checkCollision() {
+    const h = snake[0];
+    for (let i=1; i<snake.length; i++) {
+        if (snake[i].x === h.x && snake[i].y === h.y) return true;
+    }
+    for (let w of walls) {
+        if (w.x === h.x && w.y === h.y) return true;
+    }
+    return false;
+}
+
+// ============== 绘制 ==============
+function drawGame() {
+    ctx.fillStyle = '#f8f9fa';
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    ctx.fillStyle = '#333';
+    walls.forEach(w => {
+        ctx.fillRect(w.x*gridSize, w.y*gridSize, gridSize-2, gridSize-2);
+    });
+
+    snake.forEach((s,i) => {
+        ctx.fillStyle = i===0 ? '#27ae60' : '#2ecc71';
+        ctx.fillRect(s.x*gridSize, s.y*gridSize, gridSize-2, gridSize-2);
+    });
+
+    ctx.fillStyle = '#e74c3c';
+    ctx.fillRect(food.x*gridSize, food.y*gridSize, gridSize-2, gridSize-2);
+}
+
+// ============== 控制 ==============
+document.addEventListener('keydown', e => {
+    if (!isRunning || isPaused) return;
+    switch (e.key) {
+        case 'ArrowUp': if(velocity.y!==1) velocity={x:0,y:-1}; break;
+        case 'ArrowDown': if(velocity.y!==-1) velocity={x:0,y:1}; break;
+        case 'ArrowLeft': if(velocity.x!==1) velocity={x:-1,y:0}; break;
+        case 'ArrowRight': if(velocity.x!==-1) velocity={x:1,y:0}; break;
+    }
+});
+
+let tsX=0, tsY=0;
+document.addEventListener('touchstart', e=>{tsX=e.touches[0].clientX; tsY=e.touches[0].clientY;});
+document.addEventListener('touchend', e=>{
+    if (!isRunning || isPaused || !tsX) return;
+    const x = e.changedTouches[0].clientX;
+    const y = e.changedTouches[0].clientY;
+    const dx = x-tsX;
+    const dy = y-tsY;
+    if (Math.abs(dx) > Math.abs(dy)) {
+        if (dx>0 && velocity.x!==-1) velocity={x:1,y:0};
+        else if (dx<0 && velocity.x!==1) velocity={x:-1,y:0};
+    } else {
+        if (dy>0 && velocity.y!==-1) velocity={x:0,y:1};
+        else if (dy<0 && velocity.y!==1) velocity={x:0,y:-1};
+    }
+    tsX=tsY=0;
+});
+
+startBtn.addEventListener('click', () => {
+    if (isRunning) return;
+    isRunning = true;
+    isPaused = false;
+    pauseOverlay.style.display = 'none';
+    initGame();
+    clearInterval(gameLoop);
+    gameLoop = setInterval(gameUpdate, gameSpeed);
+    startBtn.disabled = true;
+    pauseBtn.disabled = false;
+    pauseBtn.textContent = '暂停';
+});
+
+pauseBtn.addEventListener('click', () => {
+    isPaused = !isPaused;
+    pauseBtn.textContent = isPaused ? '继续' : '暂停';
+    pauseOverlay.style.display = isPaused ? 'block' : 'none';
+});
+
+speedSelect.addEventListener('change', () => {
+    gameSpeed = parseInt(speedSelect.value);
+    if (isRunning) {
+        clearInterval(gameLoop);
+        gameLoop = setInterval(gameUpdate, gameSpeed);
+    }
+});
+
+mapSelect.addEventListener('change', () => {
+    currentMap = parseInt(mapSelect.value);
+    if (isRunning) {
+        clearInterval(gameLoop);
+        initGame();
+        gameLoop = setInterval(gameUpdate, gameSpeed);
+    } else {
+        initGame();
+    }
+});
+
+// 启动
+loadBestScore();
+initGame();
+</script>
+</body>
+</html>
