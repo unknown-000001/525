@@ -100,7 +100,7 @@
         .mobile-tip {
             margin-top: 10px;
             color: #666;
-            fontSize: 14px;
+            font-size: 14px;
         }
 
         .pause-overlay {
@@ -115,6 +115,49 @@
             font-size: 24px;
             display: none;
             z-index: 10;
+        }
+
+        /* 新增虚拟按键样式 */
+        .virtual-controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 20px;
+            gap: 8px;
+            max-width: 200px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .control-btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            font-size: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            background: #2a5298;
+            color: white;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+            touch-action: manipulation;
+        }
+
+        .control-btn:active {
+            background: #1e3c72;
+            transform: scale(0.95);
+        }
+
+        .control-btn:disabled {
+            background: #ccc;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .middle-controls {
+            display: flex;
+            gap: 8px;
         }
     </style>
 </head>
@@ -145,7 +188,17 @@
 
     <div id="pauseOverlay" class="pause-overlay">已暂停</div>
     <canvas id="gameCanvas"></canvas>
-    <p class="mobile-tip">电脑：方向键控制 | 手机：滑动屏幕控制</p>
+    <p class="mobile-tip">电脑：方向键控制 | 手机：滑动/按键控制</p>
+    
+    <!-- 新增虚拟按键区域 -->
+    <div class="virtual-controls">
+        <button id="upBtn" class="control-btn" disabled>↑</button>
+        <div class="middle-controls">
+            <button id="leftBtn" class="control-btn" disabled>←</button>
+            <button id="downBtn" class="control-btn" disabled>↓</button>
+            <button id="rightBtn" class="control-btn" disabled>→</button>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -158,6 +211,12 @@ const mapSelect = document.getElementById('mapSelect');
 const startBtn = document.getElementById('startBtn');
 const pauseBtn = document.getElementById('pauseBtn');
 const pauseOverlay = document.getElementById('pauseOverlay');
+
+// 新增虚拟按键元素
+const upBtn = document.getElementById('upBtn');
+const downBtn = document.getElementById('downBtn');
+const leftBtn = document.getElementById('leftBtn');
+const rightBtn = document.getElementById('rightBtn');
 
 const gridSize = 20;
 const tileCount = 20;
@@ -289,6 +348,11 @@ function gameUpdate() {
         startBtn.disabled = false;
         pauseBtn.disabled = true;
         pauseBtn.textContent = '暂停';
+        // 禁用虚拟按键
+        upBtn.disabled = true;
+        downBtn.disabled = true;
+        leftBtn.disabled = true;
+        rightBtn.disabled = true;
         alert(`游戏结束！\n当前分数：${score}\n历史最高分：${bestScore}`);
         initGame();
         return;
@@ -357,6 +421,27 @@ document.addEventListener('touchend', e=>{
     tsX=tsY=0;
 });
 
+// 新增虚拟按键点击事件
+upBtn.addEventListener('click', () => {
+    if (!isRunning || isPaused) return;
+    if (velocity.y !== 1) velocity = {x: 0, y: -1};
+});
+
+downBtn.addEventListener('click', () => {
+    if (!isRunning || isPaused) return;
+    if (velocity.y !== -1) velocity = {x: 0, y: 1};
+});
+
+leftBtn.addEventListener('click', () => {
+    if (!isRunning || isPaused) return;
+    if (velocity.x !== 1) velocity = {x: -1, y: 0};
+});
+
+rightBtn.addEventListener('click', () => {
+    if (!isRunning || isPaused) return;
+    if (velocity.x !== -1) velocity = {x: 1, y: 0};
+});
+
 startBtn.addEventListener('click', () => {
     if (isRunning) return;
     isRunning = true;
@@ -368,12 +453,23 @@ startBtn.addEventListener('click', () => {
     startBtn.disabled = true;
     pauseBtn.disabled = false;
     pauseBtn.textContent = '暂停';
+    // 启用虚拟按键
+    upBtn.disabled = false;
+    downBtn.disabled = false;
+    leftBtn.disabled = false;
+    rightBtn.disabled = false; 
 });
 
 pauseBtn.addEventListener('click', () => {
     isPaused = !isPaused;
     pauseBtn.textContent = isPaused ? '继续' : '暂停';
     pauseOverlay.style.display = isPaused ? 'block' : 'none';
+    // 暂停时禁用虚拟按键，继续时启用
+    const btnState = isPaused;
+    upBtn.disabled = btnState;
+    downBtn.disabled = btnState;
+    leftBtn.disabled = btnState;
+    rightBtn.disabled = btnState || (velocity.x === -1); // 保持反向禁用逻辑
 });
 
 speedSelect.addEventListener('change', () => {
